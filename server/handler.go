@@ -10,6 +10,7 @@ import (
 
 	"github.com/jonathanhecl/ollama-bench-go/bench"
 	"github.com/jonathanhecl/ollama-bench-go/ollama"
+	"github.com/jonathanhecl/ollama-bench-go/store"
 	"github.com/jonathanhecl/ollama-bench-go/sysinfo"
 	"github.com/jonathanhecl/ollama-bench-go/web"
 )
@@ -27,10 +28,13 @@ type ModelInfo struct {
 	IsLoaded          bool     `json:"is_loaded"`
 }
 
+const resultsFile = "bench_results.json"
+
 // Handler serves the HTTP API and static files.
 type Handler struct {
 	client *ollama.Client
 	runner *bench.Runner
+	store  *store.ResultStore
 }
 
 // NewHandler creates a new HTTP handler.
@@ -38,6 +42,7 @@ func NewHandler(client *ollama.Client) *Handler {
 	return &Handler{
 		client: client,
 		runner: bench.NewRunner(client),
+		store:  store.New(resultsFile),
 	}
 }
 
@@ -47,6 +52,7 @@ func (h *Handler) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/bench/", h.handleBench)
 	mux.HandleFunc("/api/stress/", h.handleStress)
 	mux.HandleFunc("/api/sysinfo", h.handleSysinfo)
+	mux.HandleFunc("/api/results", h.handleResults)
 
 	// Serve embedded static files
 	staticFS, err := fs.Sub(web.StaticFiles, "static")
@@ -127,11 +133,16 @@ func (h *Handler) handleBench(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.runner.RunBenchmarkWithProgress(modelName, func(event bench.ProgressEvent) {
+	result := h.runner.RunBenchmarkWithProgress(modelName, func(event bench.ProgressEvent) {
 		data, _ := json.Marshal(event)
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	})
+
+	// Persist result to disk
+	if err := h.store.Save(modelName, result); err != nil {
+		log.Printf("Warning: failed to save bench result for %s: %v", modelName, err)
+	}
 }
 
 func (h *Handler) handleStress(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +183,15 @@ func (h *Handler) handleSysinfo(w http.ResponseWriter, r *http.Request) {
 	}
 	info := sysinfo.Gather()
 	writeJSON(w, info)
+}
+
+func (h *Handler) handleResults(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	results := h.store.Load()
+	writeJSON(w, results)
 }
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

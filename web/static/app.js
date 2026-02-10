@@ -44,6 +44,19 @@
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             models = await resp.json();
 
+            // Load saved bench results and merge into models
+            try {
+                const resResp = await fetch('/api/results');
+                if (resResp.ok) {
+                    const saved = await resResp.json();
+                    models.forEach(m => {
+                        if (saved[m.name]) {
+                            m.benchResult = saved[m.name];
+                        }
+                    });
+                }
+            } catch (_) { /* ignore */ }
+
             dot.className = 'status-dot connected';
             text.textContent = `Connected — ${models.length} model${models.length !== 1 ? 's' : ''}`;
 

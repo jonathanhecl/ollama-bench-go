@@ -34,3 +34,6 @@ go.work.sum
 # Build output
 ollama-bench-go
 ollama-bench-go.exe
+
+# Bench results (local data)
+bench_results.json
