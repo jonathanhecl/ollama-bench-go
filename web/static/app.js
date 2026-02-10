@@ -4,6 +4,9 @@
 
     let models = [];
     let benchAllRunning = false;
+    let runningCount = 0;
+    let sortField = 'name';
+    let sortAsc = true;
 
     // ==================== Init ====================
     document.addEventListener('DOMContentLoaded', () => {
@@ -56,6 +59,37 @@
         }
     };
 
+    // ==================== Sorting ====================
+    window.toggleSort = function (field) {
+        if (runningCount > 0 || benchAllRunning) return; // Disable sort while running
+
+        if (sortField === field) {
+            sortAsc = !sortAsc;
+        } else {
+            sortField = field;
+            // Default desc for numbers, asc for text
+            if (['parameter_size', 'size_bytes', 'context_length', 'speed'].includes(field)) {
+                sortAsc = false;
+            } else {
+                sortAsc = true;
+            }
+        }
+        renderModels();
+    };
+
+    function getSortValue(m, field) {
+        if (field === 'speed') {
+            return m.benchResult ? m.benchResult.tokens_per_sec || 0 : -1;
+        }
+        if (field === 'parameter_size') {
+            // Parse "7B" etc? usually string. Ollama API returns string e.g "7B"
+            // For now just string compare or try to parse if needed.
+            // But size_bytes is better for size.
+            return m.parameter_size || '';
+        }
+        return m[field];
+    }
+
     // ==================== Render Models ====================
     function renderModels() {
         const body = document.getElementById('modelBody');
@@ -64,6 +98,24 @@
             body.innerHTML = `<tr><td colspan="8" class="loading-cell">No models found. Install models with <code>ollama pull</code></td></tr>`;
             return;
         }
+
+        // Sort models
+        models.sort((a, b) => {
+            let valA = getSortValue(a, sortField);
+            let valB = getSortValue(b, sortField);
+
+            if (typeof valA === 'string') valA = valA.toLowerCase();
+            if (typeof valB === 'string') valB = valB.toLowerCase();
+
+            if (valA < valB) return sortAsc ? -1 : 1;
+            if (valA > valB) return sortAsc ? 1 : -1;
+            return 0;
+        });
+
+        // Update verify headers
+        document.querySelectorAll('th.sortable .sort-icon').forEach(el => el.className = 'sort-icon');
+        const activeIcon = document.getElementById(`sort-${sortField}`);
+        if (activeIcon) activeIcon.className = `sort-icon ${sortAsc ? 'asc' : 'desc'}`;
 
         body.innerHTML = models.map((m, i) => `
             <tr id="model-row-${i}">
@@ -77,6 +129,7 @@
                 ? '<span class="badge badge-loaded">● Loaded</span>'
                 : '<span class="badge badge-unloaded">○ Idle</span>'
             }</td>
+                <td>${m.benchResult ? m.benchResult.tokens_per_sec.toFixed(1) + ' t/s' : '—'}</td>
                 <td>
                     <div class="actions-cell">
                         <button class="btn btn-play" id="play-${i}" onclick="runBench(${i})">▶ Bench</button>
@@ -85,18 +138,39 @@
                 </td>
             </tr>
             <tr id="results-row-${i}" class="results-expand-row" style="display: none;">
-                <td colspan="8" id="results-cell-${i}" class="results-expand-cell"></td>
+                <td colspan="9" id="results-cell-${i}" class="results-expand-cell"></td>
             </tr>
         `).join('');
+
+        // Restore expanded results if they exist in memory (optional, but good for UX)
+        // For now, re-rendering closes everything. That's acceptable for sort.
+        // But if we have results, we should probably show them?
+        // Let's just re-render result rows if we have results.
+        models.forEach((m, i) => {
+            if (m.benchResult) {
+                // If we have a result, we can render it.
+                // But wait, renderFinalBenchResults expects `index` to update DOM.
+                // We can call it here.
+                const row = document.getElementById(`results-row-${i}`);
+                if (row) {
+                    row.style.display = 'table-row';
+                    renderFinalBenchResults(i, m.benchResult);
+                }
+            }
+        });
     }
 
     // ==================== Run Benchmark with SSE ====================
     window.runBench = async function (index) {
+        if (index < 0 || index >= models.length) return;
         const m = models[index];
         const btn = document.getElementById(`play-${index}`);
         const resultsRow = document.getElementById(`results-row-${index}`);
         const resultsCell = document.getElementById(`results-cell-${index}`);
 
+        if (btn.disabled) return; // Prevent double click
+
+        runningCount++;
         btn.disabled = true;
         btn.innerHTML = '<div class="spinner spinner-small"></div>';
         resultsRow.style.display = 'table-row';
@@ -109,7 +183,13 @@
             await consumeSSE(`/api/bench/${encodeURIComponent(m.name)}`, (event) => {
                 updateProgressStep(`steps-${index}`, event);
                 if (event.step === 'complete' && event.status === 'done' && event.result) {
+                    m.benchResult = event.result; // Store result for sorting
                     renderFinalBenchResults(index, event.result);
+                    // Update the speed column in the row?
+                    // We can re-render the single cell or just wait for next full render.
+                    // Let's update the speed cell directly for immediate feedback?
+                    // But changing DOM manually is messy. Re-render is risky during run.
+                    // Just leave it. Next sort/refresh picks it up.
                 }
             });
         } catch (err) {
@@ -117,6 +197,7 @@
         } finally {
             btn.disabled = false;
             btn.innerHTML = '▶ Bench';
+            runningCount--;
         }
     };
 
@@ -128,20 +209,19 @@
             html += `<div class="preloaded-warning">⚠ Model was pre-loaded — load time may be misleadingly low</div>`;
         }
 
+        // Show error if present, but don't stop rendering if we have partial data
         if (r.error) {
-            html += `<div class="result-fail">${esc(r.error)}</div></div>`;
-            cell.innerHTML = html;
-            return;
+            html += `<div class="result-fail" style="margin-bottom:8px;">⚠ ${esc(r.error)}</div>`;
         }
 
         html += `<div class="result-list">`;
-        html += resultRow('Load Time', `${r.load_time_sec.toFixed(2)}s`);
-        html += resultRow('Tokens/sec', `${r.tokens_per_sec.toFixed(1)}`);
-        html += resultRow('Eval Count', `${r.eval_count}`);
-        html += resultRow('Total Time', `${r.total_time_sec.toFixed(2)}s`);
-        html += resultRow('Free RAM ↓', `${r.sys_resources.min_free_ram_mb.toFixed(0)} MB`);
-        html += resultRow('Peak CPU', `${r.sys_resources.peak_cpu_pct.toFixed(1)}%`);
-        html += resultRow('Peak GPU', `${r.sys_resources.peak_gpu_pct}`);
+        html += resultRow('Load Time', r.load_time_sec ? `${r.load_time_sec.toFixed(2)}s` : '—');
+        html += resultRow('Tokens/sec', r.tokens_per_sec ? `${r.tokens_per_sec.toFixed(1)}` : '—');
+        html += resultRow('Eval Count', r.eval_count || '—');
+        html += resultRow('Total Time', r.total_time_sec ? `${r.total_time_sec.toFixed(2)}s` : '—');
+        html += resultRow('Free RAM ↓', r.sys_resources && r.sys_resources.min_free_ram_mb ? `${r.sys_resources.min_free_ram_mb.toFixed(0)} MB` : '—');
+        html += resultRow('Peak CPU', r.sys_resources && r.sys_resources.peak_cpu_pct ? `${r.sys_resources.peak_cpu_pct.toFixed(1)}%` : '—');
+        html += resultRow('Peak GPU', r.sys_resources ? `${r.sys_resources.peak_gpu_pct}` : '—');
         html += resultRow('Embeddings', passFail(r.embeddings));
         html += resultRow('JSON Output', passFail(r.json_support));
         html += resultRow('Tool Calling', passFail(r.tools));
@@ -174,15 +254,17 @@
         if (!t) return '<span class="result-na">—</span>';
         const icon = t.pass ? '<span class="result-pass">✅ Pass</span>' : '<span class="result-fail">❌ Fail</span>';
         if (t.response) {
-            const safeResp = esc(t.response).replace(/'/g, '&#39;');
-            return `${icon} <a href="#" onclick="showDetail('${safeResp}'); return false;" class="detail-link">details</a>`;
+            // Safe way to pass string: encode it, AND escape single quotes which encodeURIComponent misses
+            const encoded = encodeURIComponent(t.response).replace(/'/g, "%27");
+            return `${icon} <a href="#" onclick="showDetail('${encoded}'); return false;" class="detail-link">details</a>`;
         }
         return icon;
     }
 
-    window.showDetail = function (text) {
+    window.showDetail = function (encodedText) {
+        const text = decodeURIComponent(encodedText);
         document.getElementById('modalTitle').textContent = 'Model Response';
-        document.getElementById('modalBody').innerHTML = `<pre>${text}</pre>`;
+        document.getElementById('modalBody').innerHTML = `<pre>${esc(text)}</pre>`;
         document.getElementById('modalOverlay').classList.add('active');
     };
 
@@ -197,6 +279,9 @@
         const resultsRow = document.getElementById(`results-row-${index}`);
         const resultsCell = document.getElementById(`results-cell-${index}`);
 
+        if (btn.disabled) return;
+
+        runningCount++;
         btn.disabled = true;
         btn.innerHTML = '<div class="spinner spinner-small"></div>';
         resultsRow.style.display = 'table-row';
@@ -218,6 +303,7 @@
         } finally {
             btn.disabled = false;
             btn.innerHTML = '🔥 Stress';
+            runningCount--;
         }
     };
 
@@ -277,6 +363,7 @@
     window.benchAll = async function () {
         if (benchAllRunning) return;
         benchAllRunning = true;
+        runningCount++; // Treat as one big running task for sorting
 
         const btn = document.getElementById('benchAllBtn');
         btn.disabled = true;
@@ -284,12 +371,17 @@
 
         for (let i = 0; i < models.length; i++) {
             btn.innerHTML = `<div class="spinner spinner-small"></div> ${i + 1}/${models.length}`;
+            // Find current index of model i (in case sorted? No wait)
+            // If we disable sorting, models[i] is stable.
+            // But we iterate i from 0 to N.
+            // Run bench for index i
             await window.runBench(i);
         }
 
         btn.disabled = false;
         btn.innerHTML = '<span class="btn-icon">▶▶</span> Bench All';
         benchAllRunning = false;
+        runningCount--;
     };
 
     // ==================== SSE Consumer ====================
@@ -314,7 +406,6 @@
 
             source.onerror = () => {
                 source.close();
-                // If we got events already, this is the server closing the connection (normal)
                 resolve();
             };
         });
@@ -328,36 +419,39 @@
         const stepId = `${containerId}-${event.step}`;
         let existing = document.getElementById(stepId);
 
-        if (event.status === 'running') {
-            if (!existing) {
-                const el = document.createElement('div');
-                el.id = stepId;
-                el.className = 'progress-step running';
-                el.innerHTML = `<div class="spinner spinner-small"></div> <span>${esc(event.label)}</span>`;
-                container.appendChild(el);
-            }
-        } else if (event.status === 'done') {
-            if (existing) {
-                existing.className = 'progress-step done';
-                existing.innerHTML = `<span class="step-check">✓</span> <span>${esc(event.label)}</span>`;
-            } else {
-                const el = document.createElement('div');
-                el.id = stepId;
-                el.className = 'progress-step done';
-                el.innerHTML = `<span class="step-check">✓</span> <span>${esc(event.label)}</span>`;
-                container.appendChild(el);
-            }
-        } else if (event.status === 'error') {
-            if (existing) {
-                existing.className = 'progress-step error';
-                existing.innerHTML = `<span class="step-fail">✗</span> <span>${esc(event.label)}</span>`;
-            } else {
-                const el = document.createElement('div');
-                el.id = stepId;
-                el.className = 'progress-step error';
-                el.innerHTML = `<span class="step-fail">✗</span> <span>${esc(event.label)}</span>`;
-                container.appendChild(el);
-            }
+        let content = '';
+        let className = 'progress-step';
+
+        switch (event.status) {
+            case 'running':
+                className += ' running';
+                content = `<div class="spinner spinner-small"></div> <span>${esc(event.label)}</span>`;
+                break;
+            case 'done':
+                className += ' done';
+                content = `<span class="step-check">✓</span> <span>${esc(event.label)}</span>`;
+                break;
+            case 'skipped':
+                className += ' skipped';
+                content = `<span class="step-skip">−</span> <span>${esc(event.label)}</span>`;
+                break;
+            case 'error':
+                className += ' error';
+                content = `<span class="step-fail">✗</span> <span>${esc(event.label)}</span>`;
+                break;
+            default:
+                content = `<span>${esc(event.label)}</span>`;
+        }
+
+        if (existing) {
+            existing.className = className;
+            existing.innerHTML = content;
+        } else {
+            const el = document.createElement('div');
+            el.id = stepId;
+            el.className = className;
+            el.innerHTML = content;
+            container.appendChild(el);
         }
 
         // Auto-scroll to latest

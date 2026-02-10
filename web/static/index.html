@@ -43,13 +43,22 @@
                 <table class="model-table" id="modelTable">
                     <thead>
                         <tr>
-                            <th>Model</th>
-                            <th>Family</th>
-                            <th>Params</th>
-                            <th>Quant</th>
-                            <th>Size</th>
-                            <th>Context</th>
-                            <th>Loaded</th>
+                            <th class="sortable" onclick="toggleSort('name')">Model <span id="sort-name"
+                                    class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('family')">Family <span id="sort-family"
+                                    class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('parameter_size')">Params <span
+                                    id="sort-parameter_size" class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('quantization_level')">Quant <span
+                                    id="sort-quantization_level" class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('size_bytes')">Size <span id="sort-size_bytes"
+                                    class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('context_length')">Context <span
+                                    id="sort-context_length" class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('is_loaded')">Loaded <span id="sort-is_loaded"
+                                    class="sort-icon"></span></th>
+                            <th class="sortable" onclick="toggleSort('speed')">Speed <span id="sort-speed"
+                                    class="sort-icon"></span></th>
                             <th>Actions</th>
                         </tr>
                     </thead>

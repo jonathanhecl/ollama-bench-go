@@ -246,6 +246,36 @@ body {
     white-space: nowrap;
 }
 
+.model-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.model-table th.sortable:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.sort-icon {
+    display: inline-block;
+    width: 12px;
+    text-align: center;
+    margin-left: 4px;
+    opacity: 0.5;
+}
+
+.sort-icon.asc::after {
+    content: '▲';
+    color: var(--accent);
+    opacity: 1;
+}
+
+.sort-icon.desc::after {
+    content: '▼';
+    color: var(--accent);
+    opacity: 1;
+}
+
 .model-table td {
     padding: 12px 16px;
     border-bottom: 1px solid rgba(42, 54, 84, 0.5);
@@ -431,6 +461,11 @@ body {
     background: rgba(239, 68, 68, 0.06);
 }
 
+.progress-step.skipped {
+    color: var(--text-muted);
+    background: rgba(100, 116, 139, 0.1);
+}
+
 .step-check {
     color: var(--success);
     font-weight: bold;
@@ -438,6 +473,11 @@ body {
 
 .step-fail {
     color: var(--danger);
+    font-weight: bold;
+}
+
+.step-skip {
+    color: var(--text-muted);
     font-weight: bold;
 }
 

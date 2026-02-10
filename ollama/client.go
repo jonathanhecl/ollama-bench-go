@@ -2,6 +2,7 @@ package ollama
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -180,9 +181,9 @@ func (c *Client) IsModelLoaded(modelName string) (bool, error) {
 // --- Chat Completion ---
 
 type ChatMessage struct {
-	Role      string   `json:"role"`
-	Content   string   `json:"content"`
-	Images    []string `json:"images,omitempty"`
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	Images    []string   `json:"images,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
@@ -196,20 +197,20 @@ type ToolFunction struct {
 }
 
 type Tool struct {
-	Type     string       `json:"type"`
-	Function ToolDef      `json:"function"`
+	Type     string  `json:"type"`
+	Function ToolDef `json:"function"`
 }
 
 type ToolDef struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  ToolParameters         `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  ToolParameters `json:"parameters"`
 }
 
 type ToolParameters struct {
-	Type       string                          `json:"type"`
+	Type       string                           `json:"type"`
 	Properties map[string]ToolParameterProperty `json:"properties"`
-	Required   []string                        `json:"required"`
+	Required   []string                         `json:"required"`
 }
 
 type ToolParameterProperty struct {
@@ -218,11 +219,11 @@ type ToolParameterProperty struct {
 }
 
 type ChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
-	Format   interface{}   `json:"format,omitempty"`
-	Tools    []Tool        `json:"tools,omitempty"`
+	Model    string                 `json:"model"`
+	Messages []ChatMessage          `json:"messages"`
+	Stream   bool                   `json:"stream"`
+	Format   interface{}            `json:"format,omitempty"`
+	Tools    []Tool                 `json:"tools,omitempty"`
 	Options  map[string]interface{} `json:"options,omitempty"`
 }
 
@@ -238,9 +239,15 @@ type ChatResponse struct {
 	EvalDuration       int64       `json:"eval_duration"`
 }
 
-func (c *Client) Chat(req ChatRequest) (*ChatResponse, error) {
+func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	reqBody, _ := json.Marshal(req)
-	resp, err := c.HTTPClient.Post(c.BaseURL+"/api/chat", "application/json", bytes.NewReader(reqBody))
+	httpreq, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/api/chat", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("chat request: %w", err)
+	}
+	httpreq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(httpreq)
 	if err != nil {
 		return nil, fmt.Errorf("chat: %w", err)
 	}
@@ -266,15 +273,21 @@ type EmbedRequest struct {
 }
 
 type EmbedResponse struct {
-	Model          string      `json:"model"`
-	Embeddings     interface{} `json:"embeddings"`
-	TotalDuration  int64       `json:"total_duration"`
-	LoadDuration   int64       `json:"load_duration"`
+	Model         string      `json:"model"`
+	Embeddings    interface{} `json:"embeddings"`
+	TotalDuration int64       `json:"total_duration"`
+	LoadDuration  int64       `json:"load_duration"`
 }
 
-func (c *Client) Embed(model, input string) (*EmbedResponse, error) {
+func (c *Client) Embed(ctx context.Context, model, input string) (*EmbedResponse, error) {
 	reqBody, _ := json.Marshal(EmbedRequest{Model: model, Input: input})
-	resp, err := c.HTTPClient.Post(c.BaseURL+"/api/embed", "application/json", bytes.NewReader(reqBody))
+	httpreq, err := http.NewRequestWithContext(ctx, "POST", c.BaseURL+"/api/embed", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("embed request: %w", err)
+	}
+	httpreq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(httpreq)
 	if err != nil {
 		return nil, fmt.Errorf("embed: %w", err)
 	}
