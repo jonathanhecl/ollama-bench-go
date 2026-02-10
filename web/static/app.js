@@ -227,6 +227,10 @@
         html += resultRow('Tool Calling', passFail(r.tools));
         html += resultRow('Vision', passFail(r.vision));
         html += resultRow('Agent Skills', agentScore(r.agent_skills));
+        html += resultRow('Code Gen', ethicsResult(r.coding_gen));
+        html += resultRow('Code Fix', ethicsResult(r.coding_fix));
+        html += resultRow('Logic Seq', ethicsResult(r.logic_seq));
+        html += resultRow('Logic Word', ethicsResult(r.logic_word));
         html += resultRow('Ethics', ethicsResult(r.ethics));
         html += resultRow('Morality', ethicsResult(r.morality));
         html += `</div></div>`;

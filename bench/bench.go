@@ -37,6 +37,10 @@ type BenchResult struct {
 	Tools        bool           `json:"tools"`
 	Vision       bool           `json:"vision"`
 	AgentSkills  AgentResult    `json:"agent_skills"`
+	CodingGen    TestResult     `json:"coding_gen"`
+	CodingFix    TestResult     `json:"coding_fix"`
+	LogicSeq     TestResult     `json:"logic_seq"`
+	LogicWord    TestResult     `json:"logic_word"`
 	Ethics       TestResult     `json:"ethics"`
 	Morality     TestResult     `json:"morality"`
 	SysResources sysmon.Results `json:"sys_resources"`
@@ -196,7 +200,43 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 		emit("agent", "done", fmt.Sprintf("Agent skills: %d/3", result.AgentSkills.Score), result.AgentSkills)
 	}
 
-	// 8. Ethics
+	// 8. Coding — Generation
+	if chatFailed {
+		emit("coding_gen", "skipped", "Code Generation: Skipped (chat failed)", nil)
+	} else {
+		emit("coding_gen", "running", "Testing code generation...", nil)
+		result.CodingGen = r.testCodingGeneration(modelName)
+		emit("coding_gen", "done", boolLabel("Code Generation", result.CodingGen.Pass), result.CodingGen)
+	}
+
+	// 9. Coding — Bug Fix
+	if chatFailed {
+		emit("coding_fix", "skipped", "Code Fix: Skipped (chat failed)", nil)
+	} else {
+		emit("coding_fix", "running", "Testing code fix ability...", nil)
+		result.CodingFix = r.testCodingFix(modelName)
+		emit("coding_fix", "done", boolLabel("Code Fix", result.CodingFix.Pass), result.CodingFix)
+	}
+
+	// 10. Logic — Sequence
+	if chatFailed {
+		emit("logic_seq", "skipped", "Logic Sequence: Skipped (chat failed)", nil)
+	} else {
+		emit("logic_seq", "running", "Testing logic (number sequence)...", nil)
+		result.LogicSeq = r.testLogicSequence(modelName)
+		emit("logic_seq", "done", boolLabel("Logic Sequence", result.LogicSeq.Pass), result.LogicSeq)
+	}
+
+	// 11. Logic — Word Problem
+	if chatFailed {
+		emit("logic_word", "skipped", "Logic Word Problem: Skipped (chat failed)", nil)
+	} else {
+		emit("logic_word", "running", "Testing logic (word problem)...", nil)
+		result.LogicWord = r.testLogicWordProblem(modelName)
+		emit("logic_word", "done", boolLabel("Logic Word Problem", result.LogicWord.Pass), result.LogicWord)
+	}
+
+	// 12. Ethics
 	if chatFailed {
 		emit("ethics", "skipped", "Ethics: Skipped (chat failed)", nil)
 	} else {
@@ -511,6 +551,125 @@ func (r *Runner) testAgentSkills(modelName string) AgentResult {
 	}
 
 	return result
+}
+
+// ==================== Coding Tests ====================
+
+func (r *Runner) testCodingGeneration(modelName string) TestResult {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	resp, err := r.Client.Chat(ctx, ollama.ChatRequest{
+		Model: modelName,
+		Messages: []ollama.ChatMessage{
+			{Role: "system", Content: "You are a programming assistant. Reply ONLY with code, no explanations."},
+			{Role: "user", Content: "Write a Python function called fizzbuzz that takes a number n and returns a list of strings from 1 to n where: multiples of 3 are 'Fizz', multiples of 5 are 'Buzz', multiples of both are 'FizzBuzz', and other numbers are their string representation."},
+		},
+		Stream: false,
+	})
+	if err != nil {
+		return TestResult{Pass: false, Response: fmt.Sprintf("Error: %v", err)}
+	}
+
+	content := resp.Message.Content
+	lower := strings.ToLower(content)
+
+	// Validate: must contain key code patterns that show understanding
+	hasFunc := strings.Contains(lower, "def fizzbuzz") || strings.Contains(lower, "def fizz_buzz") || strings.Contains(lower, "function fizzbuzz") || strings.Contains(lower, "func fizzbuzz") || strings.Contains(lower, "fn fizzbuzz")
+	hasFizz := strings.Contains(lower, "fizz")
+	hasBuzz := strings.Contains(lower, "buzz")
+	hasReturn := strings.Contains(lower, "return") || strings.Contains(lower, "append")
+	hasLogic := strings.Contains(lower, "% 3") || strings.Contains(lower, "% 5") || strings.Contains(lower, "mod 3") || strings.Contains(lower, "mod 5")
+
+	pass := hasFunc && hasFizz && hasBuzz && hasReturn && hasLogic
+
+	return TestResult{
+		Pass:     pass,
+		Response: truncate(content, 300),
+	}
+}
+
+func (r *Runner) testCodingFix(modelName string) TestResult {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	buggyCode := `def is_even(n):
+    return n % 2 == 1`
+
+	resp, err := r.Client.Chat(ctx, ollama.ChatRequest{
+		Model: modelName,
+		Messages: []ollama.ChatMessage{
+			{Role: "system", Content: "You are a code review assistant. Fix the bug and return the corrected code. Be concise."},
+			{Role: "user", Content: fmt.Sprintf("This Python function has a bug. It should return True when n is even, but it doesn't work correctly. Fix it:\n\n%s", buggyCode)},
+		},
+		Stream: false,
+	})
+	if err != nil {
+		return TestResult{Pass: false, Response: fmt.Sprintf("Error: %v", err)}
+	}
+
+	content := resp.Message.Content
+	lower := strings.ToLower(content)
+
+	// The ONLY correct fix: change == 1 to == 0  (or != 1, or use not)
+	pass := strings.Contains(lower, "% 2 == 0") || strings.Contains(lower, "% 2 != 1") || strings.Contains(lower, "% 2 ==0") || strings.Contains(lower, "not n % 2")
+
+	return TestResult{
+		Pass:     pass,
+		Response: truncate(content, 300),
+	}
+}
+
+// ==================== Logic Tests ====================
+
+func (r *Runner) testLogicSequence(modelName string) TestResult {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	resp, err := r.Client.Chat(ctx, ollama.ChatRequest{
+		Model: modelName,
+		Messages: []ollama.ChatMessage{
+			{Role: "user", Content: "Find the missing number in this sequence: 1, 4, ?, 10. Answer with just the number."},
+		},
+		Stream: false,
+	})
+	if err != nil {
+		return TestResult{Pass: false, Response: fmt.Sprintf("Error: %v", err)}
+	}
+
+	content := resp.Message.Content
+	// The answer must contain "7"
+	pass := strings.Contains(content, "7")
+
+	return TestResult{
+		Pass:     pass,
+		Response: truncate(content, 200),
+	}
+}
+
+func (r *Runner) testLogicWordProblem(modelName string) TestResult {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	resp, err := r.Client.Chat(ctx, ollama.ChatRequest{
+		Model: modelName,
+		Messages: []ollama.ChatMessage{
+			{Role: "user", Content: "Martín tiene 25 años. María es su novia desde hace 2 años, y ella tiene 4 años menos que él. ¿A qué edad María empezó a salir con Martín? Responde solo con el número."},
+		},
+		Stream: false,
+	})
+	if err != nil {
+		return TestResult{Pass: false, Response: fmt.Sprintf("Error: %v", err)}
+	}
+
+	content := resp.Message.Content
+	// The answer must contain "19"
+	pass := strings.Contains(content, "19")
+
+	return TestResult{
+		Pass:     pass,
+		Response: truncate(content, 200),
+	}
 }
 
 var refusalKeywords = []string{
