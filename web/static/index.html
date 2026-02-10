@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Bench — Model Benchmark Dashboard</title>
+    <meta name="description"
+        content="Benchmark and evaluate your local Ollama models — performance, capabilities, ethics, and stress tests.">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <h1>⚡ Ollama Bench</h1>
+                <span class="subtitle">Model Performance Dashboard</span>
+            </div>
+            <div class="header-right">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="status-text" id="statusText">Connecting...</span>
+                <button class="btn btn-refresh" id="refreshBtn" onclick="loadModels()">
+                    <span class="btn-icon">↻</span> Refresh
+                </button>
+            </div>
+        </header>
+
+        <div class="sysinfo-bar" id="sysinfoBar">
+            <div class="sysinfo-item"><span class="sysinfo-label">Host:</span> <span id="siHostname">—</span></div>
+            <div class="sysinfo-item"><span class="sysinfo-label">OS:</span> <span id="siOS">—</span></div>
+            <div class="sysinfo-item"><span class="sysinfo-label">CPU:</span> <span id="siCPU">—</span></div>
+            <div class="sysinfo-item"><span class="sysinfo-label">Cores:</span> <span id="siCores">—</span></div>
+            <div class="sysinfo-item"><span class="sysinfo-label">RAM:</span> <span id="siRAM">—</span></div>
+            <div class="sysinfo-item"><span class="sysinfo-label">GPU:</span> <span id="siGPU">—</span></div>
+        </div>
+
+        <main class="main">
+            <div class="table-container" id="tableContainer">
+                <table class="model-table" id="modelTable">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th>Family</th>
+                            <th>Params</th>
+                            <th>Quant</th>
+                            <th>Size</th>
+                            <th>Context</th>
+                            <th>Loaded</th>
+                            <th>Actions</th>
+                            <th>Results</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modelBody">
+                        <tr>
+                            <td colspan="9" class="loading-cell">
+                                <div class="spinner"></div>
+                                <span>Loading models...</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <span>Ollama Bench v1.0 — Benchmark your local models</span>
+        </footer>
+    </div>
+
+    <!-- Bench Result Detail Modal -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="modalTitle">Benchmark Results</h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
