@@ -168,9 +168,11 @@
         const resultsRow = document.getElementById(`results-row-${index}`);
         const resultsCell = document.getElementById(`results-cell-${index}`);
 
-        if (btn.disabled) return; // Prevent double click
+        if (btn.disabled) return;
 
         runningCount++;
+        document.body.classList.add('ui-locked');
+
         btn.disabled = true;
         btn.innerHTML = '<div class="spinner spinner-small"></div>';
         resultsRow.style.display = 'table-row';
@@ -185,11 +187,6 @@
                 if (event.step === 'complete' && event.status === 'done' && event.result) {
                     m.benchResult = event.result; // Store result for sorting
                     renderFinalBenchResults(index, event.result);
-                    // Update the speed column in the row?
-                    // We can re-render the single cell or just wait for next full render.
-                    // Let's update the speed cell directly for immediate feedback?
-                    // But changing DOM manually is messy. Re-render is risky during run.
-                    // Just leave it. Next sort/refresh picks it up.
                 }
             });
         } catch (err) {
@@ -198,6 +195,7 @@
             btn.disabled = false;
             btn.innerHTML = '▶ Bench';
             runningCount--;
+            if (runningCount === 0) document.body.classList.remove('ui-locked');
         }
     };
 
@@ -368,6 +366,7 @@
         if (benchAllRunning) return;
         benchAllRunning = true;
         runningCount++; // Treat as one big running task for sorting
+        document.body.classList.add('ui-locked');
 
         const btn = document.getElementById('benchAllBtn');
         btn.disabled = true;
@@ -386,6 +385,7 @@
         btn.innerHTML = '<span class="btn-icon">▶▶</span> Bench All';
         benchAllRunning = false;
         runningCount--;
+        if (runningCount === 0) document.body.classList.remove('ui-locked');
     };
 
     // ==================== SSE Consumer ====================
