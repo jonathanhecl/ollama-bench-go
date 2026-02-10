@@ -20,6 +20,9 @@
             <div class="header-right">
                 <span class="status-dot" id="statusDot"></span>
                 <span class="status-text" id="statusText">Connecting...</span>
+                <button class="btn btn-bench-all" id="benchAllBtn" onclick="benchAll()" style="display:none;">
+                    <span class="btn-icon">▶▶</span> Bench All
+                </button>
                 <button class="btn btn-refresh" id="refreshBtn" onclick="loadModels()">
                     <span class="btn-icon">↻</span> Refresh
                 </button>
@@ -48,12 +51,11 @@
                             <th>Context</th>
                             <th>Loaded</th>
                             <th>Actions</th>
-                            <th>Results</th>
                         </tr>
                     </thead>
                     <tbody id="modelBody">
                         <tr>
-                            <td colspan="9" class="loading-cell">
+                            <td colspan="8" class="loading-cell">
                                 <div class="spinner"></div>
                                 <span>Loading models...</span>
                             </td>

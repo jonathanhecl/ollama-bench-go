@@ -104,7 +104,7 @@ func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleBench(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -115,12 +115,27 @@ func (h *Handler) handleBench(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.runner.RunBenchmark(modelName)
-	writeJSON(w, result)
+	// SSE streaming response
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	h.runner.RunBenchmarkWithProgress(modelName, func(event bench.ProgressEvent) {
+		data, _ := json.Marshal(event)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	})
 }
 
 func (h *Handler) handleStress(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -131,8 +146,32 @@ func (h *Handler) handleStress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := h.runner.RunStressTest(modelName)
-	writeJSON(w, results)
+	// SSE streaming response
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	h.runner.RunStressTestWithProgress(modelName, func(event bench.ProgressEvent) {
+		data, _ := json.Marshal(event)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	})
+}
+
+func (h *Handler) handleSysinfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	info := sysinfo.Gather()
+	writeJSON(w, info)
 }
 
 func writeJSON(w http.ResponseWriter, data interface{}) {
@@ -144,13 +183,4 @@ func writeError(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
-
-func (h *Handler) handleSysinfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	info := sysinfo.Gather()
-	writeJSON(w, info)
 }
