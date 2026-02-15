@@ -705,3 +705,37 @@ body.ui-locked .model-table th.sortable {
         grid-template-columns: 1fr;
     }
 }
+
+/* Enhanced Details & TPS Styles */
+.tps-small {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.test-detail-section {
+    margin-bottom: 20px;
+}
+
+.detail-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.prompt-box {
+    background: rgba(59, 130, 246, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.resp-box pre {
+    margin-top: 0 !important;
+}

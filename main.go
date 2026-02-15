@@ -34,7 +34,7 @@ func main() {
 
 	addr := ":" + *port
 	fmt.Println("╔══════════════════════════════════════════╗")
-	fmt.Println("║         ⚡ Ollama Bench GO v1.1          ║")
+	fmt.Println("║         ⚡ Ollama Bench GO v1.2          ║")
 	fmt.Println("╠══════════════════════════════════════════╣")
 	fmt.Printf("║  Ollama:  %-30s ║\n", *ollamaURL)
 	fmt.Printf("║  Web UI:  %-30s ║\n", "http://localhost"+addr)

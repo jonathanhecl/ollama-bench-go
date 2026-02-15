@@ -238,12 +238,12 @@
         html += resultRow('Tool Calling', passFail(r.tools));
         html += resultRow('Vision', passFail(r.vision));
         html += resultRow('Agent Skills', agentScore(r.agent_skills));
-        html += resultRow('Code Gen', ethicsResult(r.coding_gen));
-        html += resultRow('Code Fix', ethicsResult(r.coding_fix));
-        html += resultRow('Logic Seq', ethicsResult(r.logic_seq));
-        html += resultRow('Logic Word', ethicsResult(r.logic_word));
-        html += resultRow('Ethics', ethicsResult(r.ethics));
-        html += resultRow('Morality', ethicsResult(r.morality));
+        html += resultRow('Code Gen', renderTestResult(r.coding_gen));
+        html += resultRow('Code Fix', renderTestResult(r.coding_fix));
+        html += resultRow('Logic Seq', renderTestResult(r.logic_seq));
+        html += resultRow('Logic Word', renderTestResult(r.logic_word));
+        html += resultRow('Ethics', renderTestResult(r.ethics));
+        html += resultRow('Morality', renderTestResult(r.morality));
         html += `</div></div>`;
 
         cell.innerHTML = html;
@@ -262,24 +262,47 @@
     function agentScore(a) {
         if (!a) return '<span class="result-na">—</span>';
         const cls = a.score >= 3 ? 'result-pass' : a.score >= 2 ? 'result-warn' : 'result-fail';
-        return `<span class="${cls}">${a.score}/3</span>`;
+        let html = `<span class="${cls}">${a.score}/3</span>`;
+        if (a.tokens_per_sec > 0) {
+            html += ` <small class="tps-small">(${a.tokens_per_sec.toFixed(1)} t/s)</small>`;
+        }
+        if (a.prompt || a.response) {
+            const encodedPrompt = encodeURIComponent(a.prompt || "").replace(/'/g, "%27");
+            const encodedResp = encodeURIComponent(a.response || "").replace(/'/g, "%27");
+            html += ` <a href="#" onclick="showDetail('${encodedPrompt}', '${encodedResp}'); return false;" class="detail-link">details</a>`;
+        }
+        return html;
     }
 
-    function ethicsResult(t) {
+    function renderTestResult(t) {
         if (!t) return '<span class="result-na">—</span>';
         const icon = t.pass ? '<span class="result-pass">✅ Pass</span>' : '<span class="result-fail">❌ Fail</span>';
-        if (t.response) {
-            // Safe way to pass string: encode it, AND escape single quotes which encodeURIComponent misses
-            const encoded = encodeURIComponent(t.response).replace(/'/g, "%27");
-            return `${icon} <a href="#" onclick="showDetail('${encoded}'); return false;" class="detail-link">details</a>`;
+        let html = icon;
+        if (t.tokens_per_sec > 0) {
+            html += ` <small class="tps-small">(${t.tokens_per_sec.toFixed(1)} t/s)</small>`;
         }
-        return icon;
+        if (t.prompt || t.response) {
+            const encodedPrompt = encodeURIComponent(t.prompt || "").replace(/'/g, "%27");
+            const encodedResp = encodeURIComponent(t.response || "").replace(/'/g, "%27");
+            html += ` <a href="#" onclick="showDetail('${encodedPrompt}', '${encodedResp}'); return false;" class="detail-link">details</a>`;
+        }
+        return html;
     }
 
-    window.showDetail = function (encodedText) {
-        const text = decodeURIComponent(encodedText);
-        document.getElementById('modalTitle').textContent = 'Model Response';
-        document.getElementById('modalBody').innerHTML = `<pre>${esc(text)}</pre>`;
+    window.showDetail = function (encodedPrompt, encodedResp) {
+        const prompt = decodeURIComponent(encodedPrompt);
+        const resp = decodeURIComponent(encodedResp);
+        document.getElementById('modalTitle').textContent = 'Test Details';
+        document.getElementById('modalBody').innerHTML = `
+            <div class="test-detail-section">
+                <div class="detail-label">PROMPT / CONSIGN</strong></div>
+                <div class="detail-content prompt-box">${esc(prompt)}</div>
+            </div>
+            <div class="test-detail-section" style="margin-top:16px;">
+                <div class="detail-label">MODEL RESPONSE</strong></div>
+                <div class="detail-content resp-box"><pre>${esc(resp)}</pre></div>
+            </div>
+        `;
         document.getElementById('modalOverlay').classList.add('active');
     };
 
