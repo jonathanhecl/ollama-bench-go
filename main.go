@@ -33,11 +33,25 @@ func main() {
 	handler.SetupRoutes(mux)
 
 	addr := ":" + *port
+	// Link helper for terminals that support OSC 8
+	makeLink := func(url, text string) string {
+		return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
+	}
+
+	webURL := "http://localhost" + addr
+	ollamaLink := makeLink(*ollamaURL, *ollamaURL)
+	webLink := makeLink(webURL, webURL)
+
+	// Since escape codes have 0 width in terminal but count in Go strings,
+	// we use the original length for padding.
+	ollamaPad := 30 + (len(ollamaLink) - len(*ollamaURL))
+	webPad := 30 + (len(webLink) - len(webURL))
+
 	fmt.Println("╔══════════════════════════════════════════╗")
 	fmt.Println("║         ⚡ Ollama Bench GO v1.2          ║")
 	fmt.Println("╠══════════════════════════════════════════╣")
-	fmt.Printf("║  Ollama:  %-30s ║\n", *ollamaURL)
-	fmt.Printf("║  Web UI:  %-30s ║\n", "http://localhost"+addr)
+	fmt.Printf("║  Ollama:  %-*s ║\n", ollamaPad, ollamaLink)
+	fmt.Printf("║  Web UI:  %-*s ║\n", webPad, webLink)
 	fmt.Println("╚══════════════════════════════════════════╝")
 	fmt.Println()
 
