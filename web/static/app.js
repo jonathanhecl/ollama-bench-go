@@ -132,7 +132,10 @@
 
         body.innerHTML = models.map((m, i) => `
             <tr id="model-row-${i}">
-                <td><span class="model-name">${esc(m.name)}</span></td>
+                <td>
+                    <span class="model-name">${esc(m.name)}</span>
+                    ${m.benchResult && m.benchResult.is_thinking ? ' <span class="badge badge-thinking" title="Thinking model">🧠 Reasoning</span>' : ''}
+                </td>
                 <td>${esc(m.family || '—')}</td>
                 <td>${esc(m.parameter_size || '—')}</td>
                 <td>${esc(m.quantization_level || '—')}</td>
@@ -233,6 +236,10 @@
         html += resultRow('Free RAM ↓', r.sys_resources && r.sys_resources.min_free_ram_mb ? `${r.sys_resources.min_free_ram_mb.toFixed(0)} MB` : '—');
         html += resultRow('Peak CPU', r.sys_resources && r.sys_resources.peak_cpu_pct ? `${r.sys_resources.peak_cpu_pct.toFixed(1)}%` : '—');
         html += resultRow('Peak GPU', r.sys_resources ? `${r.sys_resources.peak_gpu_pct}` : '—');
+        if (r.is_thinking) {
+            const estTokens = Math.round(r.avg_think_len / 4);
+            html += resultRow('Avg Thinking', `<span style="color:var(--purple)">${estTokens} tokens (avg)</span>`);
+        }
         html += resultRow('Embeddings', passFail(r.embeddings));
         html += resultRow('JSON Output', passFail(r.json_support));
         html += resultRow('Tool Calling', passFail(r.tools));
@@ -266,10 +273,11 @@
         if (a.tokens_per_sec > 0) {
             html += ` <small class="tps-small">(${a.tokens_per_sec.toFixed(1)} t/s)</small>`;
         }
-        if (a.prompt || a.response) {
+        if (a.prompt || a.response || a.thinking) {
             const encodedPrompt = encodeURIComponent(a.prompt || "").replace(/'/g, "%27");
             const encodedResp = encodeURIComponent(a.response || "").replace(/'/g, "%27");
-            html += ` <a href="#" onclick="showDetail('${encodedPrompt}', '${encodedResp}'); return false;" class="detail-link">details</a>`;
+            const encodedThink = encodeURIComponent(a.thinking || "").replace(/'/g, "%27");
+            html += ` <a href="#" onclick="showDetail('${encodedPrompt}', '${encodedResp}', '${encodedThink}'); return false;" class="detail-link">details</a>`;
         }
         return html;
     }
@@ -281,28 +289,43 @@
         if (t.tokens_per_sec > 0) {
             html += ` <small class="tps-small">(${t.tokens_per_sec.toFixed(1)} t/s)</small>`;
         }
-        if (t.prompt || t.response) {
+        if (t.prompt || t.response || t.thinking) {
             const encodedPrompt = encodeURIComponent(t.prompt || "").replace(/'/g, "%27");
             const encodedResp = encodeURIComponent(t.response || "").replace(/'/g, "%27");
-            html += ` <a href="#" onclick="showDetail('${encodedPrompt}', '${encodedResp}'); return false;" class="detail-link">details</a>`;
+            const encodedThink = encodeURIComponent(t.thinking || "").replace(/'/g, "%27");
+            html += ` <a href="#" onclick="showDetail('${encodedPrompt}', '${encodedResp}', '${encodedThink}'); return false;" class="detail-link">details</a>`;
         }
         return html;
     }
 
-    window.showDetail = function (encodedPrompt, encodedResp) {
+    window.showDetail = function (encodedPrompt, encodedResp, encodedThink) {
         const prompt = decodeURIComponent(encodedPrompt);
         const resp = decodeURIComponent(encodedResp);
-        document.getElementById('modalTitle').textContent = 'Test Details';
-        document.getElementById('modalBody').innerHTML = `
+        const think = encodedThink ? decodeURIComponent(encodedThink) : "";
+
+        let bodyHtml = `
             <div class="test-detail-section">
                 <div class="detail-label">PROMPT / CONSIGN</strong></div>
                 <div class="detail-content prompt-box">${esc(prompt)}</div>
-            </div>
+            </div>`;
+
+        if (think) {
+            bodyHtml += `
+            <div class="test-detail-section" style="margin-top:16px;">
+                <div class="detail-label" style="color:var(--purple)">THINKING PROCESS (REASONING)</strong></div>
+                <div class="detail-content think-box"><pre>${esc(think)}</pre></div>
+            </div>`;
+        }
+
+        bodyHtml += `
             <div class="test-detail-section" style="margin-top:16px;">
                 <div class="detail-label">MODEL RESPONSE</strong></div>
                 <div class="detail-content resp-box"><pre>${esc(resp)}</pre></div>
             </div>
         `;
+
+        document.getElementById('modalTitle').textContent = 'Test Details';
+        document.getElementById('modalBody').innerHTML = bodyHtml;
         document.getElementById('modalOverlay').classList.add('active');
     };
 

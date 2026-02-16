@@ -44,6 +44,8 @@ type BenchResult struct {
 	Ethics       TestResult     `json:"ethics"`
 	Morality     TestResult     `json:"morality"`
 	SysResources sysmon.Results `json:"sys_resources"`
+	IsThinking   bool           `json:"is_thinking"`
+	AvgThinkLen  int            `json:"avg_think_len"`
 	Error        string         `json:"error,omitempty"`
 }
 
@@ -54,6 +56,8 @@ type AgentResult struct {
 	Score        int     `json:"score"` // 0-3
 	TokensPerSec float64 `json:"tokens_per_sec"`
 	Prompt       string  `json:"prompt"`
+	Thinking     string  `json:"thinking,omitempty"`
+	ThinkingLen  int     `json:"think_len,omitempty"`
 }
 
 type TestResult struct {
@@ -61,6 +65,8 @@ type TestResult struct {
 	Response     string  `json:"response"` // truncated
 	TokensPerSec float64 `json:"tokens_per_sec"`
 	Prompt       string  `json:"prompt"`
+	Thinking     string  `json:"thinking,omitempty"`
+	ThinkingLen  int     `json:"think_len,omitempty"`
 }
 
 // StressResult holds one context-level stress test result.
@@ -156,6 +162,15 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 		result.EvalCount = chatResp.EvalCount
 		if chatResp.EvalDuration > 0 {
 			result.TokensPerSec = float64(chatResp.EvalCount) / (float64(chatResp.EvalDuration) / 1e9)
+		}
+
+		// Check for thinking in initial chat
+		think, _ := extractThinking(chatResp.Message.Content)
+		if len(think) > 0 {
+			// We don't store the chat thinking block specifically in BenchResult,
+			// but we can account for it in the average calculation later.
+			// Let's use a temporary way to pass this to the avg calculation.
+			// Actually, let's just use the specific results which are more consistent.
 		}
 	}
 	emit("chat", "done", fmt.Sprintf("Load: %.2fs | %.1f tok/s | %d tokens", result.LoadTimeSec, result.TokensPerSec, result.EvalCount), map[string]interface{}{
@@ -286,6 +301,29 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 		}
 		if count > 0 {
 			result.TokensPerSec = sum / float64(count)
+		}
+
+		// Thinking stats
+		thinkSum := 0
+		thinkCount := 0
+		allRes := []int{
+			result.AgentSkills.ThinkingLen,
+			result.CodingGen.ThinkingLen,
+			result.CodingFix.ThinkingLen,
+			result.LogicSeq.ThinkingLen,
+			result.LogicWord.ThinkingLen,
+			result.Ethics.ThinkingLen,
+			result.Morality.ThinkingLen,
+		}
+		for _, tl := range allRes {
+			if tl > 0 {
+				thinkSum += tl
+				thinkCount++
+			}
+		}
+		if thinkCount > 0 {
+			result.IsThinking = true
+			result.AvgThinkLen = thinkSum / thinkCount
 		}
 	}
 
@@ -500,50 +538,59 @@ func (r *Runner) testEmbeddings(modelName string) bool {
 }
 
 func (r *Runner) testAgentSkills(modelName string) AgentResult {
-	prompt := "What's the weather in Tokyo?"
+	skillDef := `---
+name: text-processing
+description: Extracts text from files.
+---
+
+# Text Processing Skill
+
+## When to use this skill
+Use this skill when a user needs to extract text from a file.
+
+## How to Use this Skill
+This skill provides the ` + "`extract_text()`" + ` function.
+
+### Parameters
+- ` + "`file_path`" + ` (str): Path to the file
+- ` + "`pages`" + ` (str): Pages to extract - "all", "1-3", or "1,2,3"
+
+Alternatively, call from command line:
+` + "`python skills/text-parsing/parse.py extract_text --file_path /path/to/file.pdf --pages all`" + `
+`
+
+	userReq := "Please extract all text from report.pdf using this skill."
+	prompt := fmt.Sprintf("You are an intelligent agent. The following is a Skill definition you have available:\n\n%s\n\nUser Request: '%s'\n\nPlan and execute the task.", skillDef, userReq)
+
 	result := AgentResult{Prompt: prompt}
 
 	tools := []ollama.Tool{
-		// ... (same tools as before)
 		{
 			Type: "function",
 			Function: ollama.ToolDef{
-				Name:        "get_weather",
-				Description: "Get the current weather for a city",
+				Name:        "extract_text",
+				Description: "Extract text from a file",
 				Parameters: ollama.ToolParameters{
 					Type: "object",
 					Properties: map[string]ollama.ToolParameterProperty{
-						"city": {Type: "string", Description: "The city name"},
+						"file_path": {Type: "string", Description: "Path to the file"},
+						"pages":     {Type: "string", Description: "Pages to extract (e.g. 'all', '1-3')"},
 					},
-					Required: []string{"city"},
+					Required: []string{"file_path", "pages"},
 				},
 			},
 		},
 		{
 			Type: "function",
 			Function: ollama.ToolDef{
-				Name:        "calculate",
-				Description: "Calculate a mathematical expression",
+				Name:        "execute_command",
+				Description: "Execute a shell command",
 				Parameters: ollama.ToolParameters{
 					Type: "object",
 					Properties: map[string]ollama.ToolParameterProperty{
-						"expression": {Type: "string", Description: "The math expression to evaluate"},
+						"command": {Type: "string", Description: "The command to execute"},
 					},
-					Required: []string{"expression"},
-				},
-			},
-		},
-		{
-			Type: "function",
-			Function: ollama.ToolDef{
-				Name:        "search_web",
-				Description: "Search the web for information",
-				Parameters: ollama.ToolParameters{
-					Type: "object",
-					Properties: map[string]ollama.ToolParameterProperty{
-						"query": {Type: "string", Description: "The search query"},
-					},
-					Required: []string{"query"},
+					Required: []string{"command"},
 				},
 			},
 		},
@@ -555,7 +602,7 @@ func (r *Runner) testAgentSkills(modelName string) AgentResult {
 	resp, err := r.Client.Chat(ctx, ollama.ChatRequest{
 		Model: modelName,
 		Messages: []ollama.ChatMessage{
-			{Role: "system", Content: "You are a helpful assistant. You have access to tools and MUST use them when appropriate. Do not answer questions directly if a tool can help."},
+			{Role: "system", Content: "You are an autonomous agent capable of following skills defined in markdown. usage of tools is mandatory."},
 			{Role: "user", Content: prompt},
 		},
 		Stream: false,
@@ -569,24 +616,43 @@ func (r *Runner) testAgentSkills(modelName string) AgentResult {
 		result.TokensPerSec = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
+	thinking, _ := extractThinking(resp.Message.Content)
+	result.Thinking = thinking
+	result.ThinkingLen = len(thinking)
+
 	// Check proper format (tool_calls present)
 	if len(resp.Message.ToolCalls) > 0 {
 		result.ProperFormat = true
 		result.Score++
 
 		tc := resp.Message.ToolCalls[0]
-		// Check correct tool
-		if tc.Function.Name == "get_weather" {
+		// Check correct tool usage
+		if tc.Function.Name == "extract_text" {
 			result.CorrectTool = true
 			result.Score++
-		}
 
-		// Check correct arguments
-		if city, ok := tc.Function.Arguments["city"]; ok {
-			cityStr, isStr := city.(string)
-			if isStr && strings.Contains(strings.ToLower(cityStr), "tokyo") {
-				result.CorrectArgs = true
-				result.Score++
+			// Check args
+			if fpath, ok := tc.Function.Arguments["file_path"]; ok {
+				if s, ok := fpath.(string); ok && strings.Contains(s, "report.pdf") {
+					result.CorrectArgs = true
+				}
+			}
+			if pages, ok := tc.Function.Arguments["pages"]; ok {
+				if s, ok := pages.(string); ok && s == "all" {
+					if result.CorrectArgs {
+						result.Score++ // Bonus point for perfect args
+					}
+				}
+			}
+		} else if tc.Function.Name == "execute_command" {
+			result.CorrectTool = true
+			result.Score++
+
+			if cmd, ok := tc.Function.Arguments["command"]; ok {
+				if s, ok := cmd.(string); ok && strings.Contains(s, "parse.py") && strings.Contains(s, "report.pdf") {
+					result.CorrectArgs = true
+					result.Score++
+				}
 			}
 		}
 	}
@@ -618,7 +684,7 @@ func (r *Runner) testCodingGeneration(modelName string) TestResult {
 		tps = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
-	content := resp.Message.Content
+	thinking, content := extractThinking(resp.Message.Content)
 	lower := strings.ToLower(content)
 
 	// Validate: must contain key code patterns that show understanding
@@ -635,6 +701,8 @@ func (r *Runner) testCodingGeneration(modelName string) TestResult {
 		Response:     truncate(content, 300),
 		TokensPerSec: tps,
 		Prompt:       prompt,
+		Thinking:     thinking,
+		ThinkingLen:  len(thinking),
 	}
 }
 
@@ -663,7 +731,7 @@ func (r *Runner) testCodingFix(modelName string) TestResult {
 		tps = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
-	content := resp.Message.Content
+	thinking, content := extractThinking(resp.Message.Content)
 	lower := strings.ToLower(content)
 
 	// The ONLY correct fix: change == 1 to == 0  (or != 1, or use not)
@@ -674,6 +742,8 @@ func (r *Runner) testCodingFix(modelName string) TestResult {
 		Response:     truncate(content, 300),
 		TokensPerSec: tps,
 		Prompt:       prompt,
+		Thinking:     thinking,
+		ThinkingLen:  len(thinking),
 	}
 }
 
@@ -700,7 +770,8 @@ func (r *Runner) testLogicSequence(modelName string) TestResult {
 		tps = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
-	content := resp.Message.Content
+	thinking, content := extractThinking(resp.Message.Content)
+
 	// The answer must contain "7"
 	pass := strings.Contains(content, "7")
 
@@ -709,6 +780,8 @@ func (r *Runner) testLogicSequence(modelName string) TestResult {
 		Response:     truncate(content, 200),
 		TokensPerSec: tps,
 		Prompt:       prompt,
+		Thinking:     thinking,
+		ThinkingLen:  len(thinking),
 	}
 }
 
@@ -733,7 +806,8 @@ func (r *Runner) testLogicWordProblem(modelName string) TestResult {
 		tps = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
-	content := resp.Message.Content
+	thinking, content := extractThinking(resp.Message.Content)
+
 	// The answer must contain "19"
 	pass := strings.Contains(content, "19")
 
@@ -742,6 +816,8 @@ func (r *Runner) testLogicWordProblem(modelName string) TestResult {
 		Response:     truncate(content, 200),
 		TokensPerSec: tps,
 		Prompt:       prompt,
+		Thinking:     thinking,
+		ThinkingLen:  len(thinking),
 	}
 }
 
@@ -795,7 +871,7 @@ func (r *Runner) testEthics(modelName string) TestResult {
 		tps = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
-	content := resp.Message.Content
+	thinking, content := extractThinking(resp.Message.Content)
 	pass := containsRefusal(content)
 
 	return TestResult{
@@ -803,6 +879,8 @@ func (r *Runner) testEthics(modelName string) TestResult {
 		Response:     truncate(content, 200),
 		TokensPerSec: tps,
 		Prompt:       prompt,
+		Thinking:     thinking,
+		ThinkingLen:  len(thinking),
 	}
 }
 
@@ -828,7 +906,7 @@ func (r *Runner) testMorality(modelName string) TestResult {
 		tps = float64(resp.EvalCount) / (float64(resp.EvalDuration) / 1e9)
 	}
 
-	content := resp.Message.Content
+	thinking, content := extractThinking(resp.Message.Content)
 	pass := containsRefusal(content)
 
 	return TestResult{
@@ -836,5 +914,23 @@ func (r *Runner) testMorality(modelName string) TestResult {
 		Response:     truncate(content, 200),
 		TokensPerSec: tps,
 		Prompt:       prompt,
+		Thinking:     thinking,
+		ThinkingLen:  len(thinking),
 	}
+}
+
+func extractThinking(content string) (string, string) {
+	startTag := "<think>"
+	endTag := "</think>"
+	startIdx := strings.Index(content, startTag)
+	endIdx := strings.Index(content, endTag)
+
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		thinking := content[startIdx+len(startTag) : endIdx]
+		// Remove think block from content
+		cleaned := content[:startIdx] + content[endIdx+len(endTag):]
+		return strings.TrimSpace(thinking), strings.TrimSpace(cleaned)
+	}
+
+	return "", content
 }
