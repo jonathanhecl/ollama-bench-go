@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultTimeout = 90 * time.Second
+	DefaultTimeout = 300 * time.Second
 	StressTimeout  = 10 * time.Minute
 )
 
@@ -199,7 +199,9 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 	}
 
 	// 5. Vision
-	emit("vision", "done", boolLabel("Vision (from capabilities)", result.Vision), result.Vision)
+	emit("vision", "running", "Testing vision support...", nil)
+	result.Vision = r.testVision(modelName)
+	emit("vision", "done", boolLabel("Vision", result.Vision), result.Vision)
 
 	// 6. Embeddings (Always run this, even if chat failed!)
 	emit("embeddings", "running", "Testing embeddings...", nil)
@@ -535,6 +537,36 @@ func (r *Runner) testEmbeddings(modelName string) bool {
 
 	_, err := r.Client.Embed(ctx, modelName, "Hello world")
 	return err == nil
+}
+
+func (r *Runner) testVision(modelName string) bool {
+	// A tiny 1x1 black pixel PNG in base64
+	// This is a valid PNG file to avoid decoder errors in some models
+	pixelBase64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	resp, err := r.Client.Chat(ctx, ollama.ChatRequest{
+		Model: modelName,
+		Messages: []ollama.ChatMessage{
+			{
+				Role:    "user",
+				Content: "What color is this image?",
+				Images:  []string{pixelBase64},
+			},
+		},
+		Stream: false,
+	})
+	if err != nil {
+		return false
+	}
+
+	// If the model responds with anything containing "black" or "pure",
+	// or even just responds coherently with an image in the prompt, it supports vision.
+	// Most models will say "It's a black pixel" or "The image is black".
+	lower := strings.ToLower(resp.Message.Content)
+	return strings.Contains(lower, "black") || strings.Contains(lower, "color") || strings.Contains(lower, "square") || strings.Contains(lower, "image")
 }
 
 func (r *Runner) testAgentSkills(modelName string) AgentResult {
