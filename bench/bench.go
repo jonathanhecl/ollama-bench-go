@@ -147,6 +147,7 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 	chatResp, err := r.Client.Chat(ctxChat, ollama.ChatRequest{
 		Model: modelName,
 		Messages: []ollama.ChatMessage{
+			{Role: "system", Content: "You are a fast assistant. Do NOT use <think> or any reasoning tags. Answer immediately."},
 			{Role: "user", Content: "Explain what a CPU is in about 50 words."},
 		},
 		Stream: false,
