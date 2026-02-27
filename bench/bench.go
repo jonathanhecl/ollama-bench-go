@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultTimeout = 300 * time.Second
+	DefaultTimeout = 900 * time.Second
 	StressTimeout  = 10 * time.Minute
 )
 
@@ -147,7 +147,7 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 	chatResp, err := r.Client.Chat(ctxChat, ollama.ChatRequest{
 		Model: modelName,
 		Messages: []ollama.ChatMessage{
-			{Role: "user", Content: "Explain what a CPU is in exactly 100 words."},
+			{Role: "user", Content: "Explain what a CPU is in about 50 words."},
 		},
 		Stream: false,
 	})
@@ -181,22 +181,14 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 	})
 
 	// 3. JSON support
-	if chatFailed {
-		emit("json", "skipped", "JSON output: Skipped (chat failed)", nil)
-	} else {
-		emit("json", "running", "Testing JSON output support...", nil)
-		result.JSON = r.testJSON(modelName)
-		emit("json", "done", boolLabel("JSON output", result.JSON), result.JSON)
-	}
+	emit("json", "running", "Testing JSON output support...", nil)
+	result.JSON = r.testJSON(modelName)
+	emit("json", "done", boolLabel("JSON output", result.JSON), result.JSON)
 
 	// 4. Tool calling
-	if chatFailed {
-		emit("tools", "skipped", "Tool calling: Skipped (chat failed)", nil)
-	} else {
-		emit("tools", "running", "Testing tool calling...", nil)
-		result.Tools = r.testTools(modelName)
-		emit("tools", "done", boolLabel("Tool calling", result.Tools), result.Tools)
-	}
+	emit("tools", "running", "Testing tool calling...", nil)
+	result.Tools = r.testTools(modelName)
+	emit("tools", "done", boolLabel("Tool calling", result.Tools), result.Tools)
 
 	// 5. Vision
 	emit("vision", "running", "Testing vision support...", nil)
@@ -213,67 +205,39 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 	emit("embeddings", "done", boolLabel("Embeddings", result.Embeddings), result.Embeddings)
 
 	// 7. Agent skills
-	if chatFailed {
-		emit("agent", "skipped", "Agent skills: Skipped (chat failed)", nil)
-	} else {
-		emit("agent", "running", "Testing agent skills...", nil)
-		result.AgentSkills = r.testAgentSkills(modelName)
-		emit("agent", "done", fmt.Sprintf("Agent skills: %d/3", result.AgentSkills.Score), result.AgentSkills)
-	}
+	emit("agent", "running", "Testing agent skills...", nil)
+	result.AgentSkills = r.testAgentSkills(modelName)
+	emit("agent", "done", fmt.Sprintf("Agent skills: %d/3", result.AgentSkills.Score), result.AgentSkills)
 
 	// 8. Coding — Generation
-	if chatFailed {
-		emit("coding_gen", "skipped", "Code Generation: Skipped (chat failed)", nil)
-	} else {
-		emit("coding_gen", "running", "Testing code generation...", nil)
-		result.CodingGen = r.testCodingGeneration(modelName)
-		emit("coding_gen", "done", boolLabel("Code Generation", result.CodingGen.Pass), result.CodingGen)
-	}
+	emit("coding_gen", "running", "Testing code generation...", nil)
+	result.CodingGen = r.testCodingGeneration(modelName)
+	emit("coding_gen", "done", boolLabel("Code Generation", result.CodingGen.Pass), result.CodingGen)
 
 	// 9. Coding — Bug Fix
-	if chatFailed {
-		emit("coding_fix", "skipped", "Code Fix: Skipped (chat failed)", nil)
-	} else {
-		emit("coding_fix", "running", "Testing code fix ability...", nil)
-		result.CodingFix = r.testCodingFix(modelName)
-		emit("coding_fix", "done", boolLabel("Code Fix", result.CodingFix.Pass), result.CodingFix)
-	}
+	emit("coding_fix", "running", "Testing code fix ability...", nil)
+	result.CodingFix = r.testCodingFix(modelName)
+	emit("coding_fix", "done", boolLabel("Code Fix", result.CodingFix.Pass), result.CodingFix)
 
 	// 10. Logic — Sequence
-	if chatFailed {
-		emit("logic_seq", "skipped", "Logic Sequence: Skipped (chat failed)", nil)
-	} else {
-		emit("logic_seq", "running", "Testing logic (number sequence)...", nil)
-		result.LogicSeq = r.testLogicSequence(modelName)
-		emit("logic_seq", "done", boolLabel("Logic Sequence", result.LogicSeq.Pass), result.LogicSeq)
-	}
+	emit("logic_seq", "running", "Testing logic (number sequence)...", nil)
+	result.LogicSeq = r.testLogicSequence(modelName)
+	emit("logic_seq", "done", boolLabel("Logic Sequence", result.LogicSeq.Pass), result.LogicSeq)
 
 	// 11. Logic — Word Problem
-	if chatFailed {
-		emit("logic_word", "skipped", "Logic Word Problem: Skipped (chat failed)", nil)
-	} else {
-		emit("logic_word", "running", "Testing logic (word problem)...", nil)
-		result.LogicWord = r.testLogicWordProblem(modelName)
-		emit("logic_word", "done", boolLabel("Logic Word Problem", result.LogicWord.Pass), result.LogicWord)
-	}
+	emit("logic_word", "running", "Testing logic (word problem)...", nil)
+	result.LogicWord = r.testLogicWordProblem(modelName)
+	emit("logic_word", "done", boolLabel("Logic Word Problem", result.LogicWord.Pass), result.LogicWord)
 
 	// 12. Ethics
-	if chatFailed {
-		emit("ethics", "skipped", "Ethics: Skipped (chat failed)", nil)
-	} else {
-		emit("ethics", "running", "Testing ethics (refusal of illegal request)...", nil)
-		result.Ethics = r.testEthics(modelName)
-		emit("ethics", "done", boolLabel("Ethics", result.Ethics.Pass), result.Ethics)
-	}
+	emit("ethics", "running", "Testing ethics (refusal of illegal request)...", nil)
+	result.Ethics = r.testEthics(modelName)
+	emit("ethics", "done", boolLabel("Ethics", result.Ethics.Pass), result.Ethics)
 
 	// 13. Morality
-	if chatFailed {
-		emit("morality", "skipped", "Morality: Skipped (chat failed)", nil)
-	} else {
-		emit("morality", "running", "Testing morality (refusal of immoral request)...", nil)
-		result.Morality = r.testMorality(modelName)
-		emit("morality", "done", boolLabel("Morality", result.Morality.Pass), result.Morality)
-	}
+	emit("morality", "running", "Testing morality (refusal of immoral request)...", nil)
+	result.Morality = r.testMorality(modelName)
+	emit("morality", "done", boolLabel("Morality", result.Morality.Pass), result.Morality)
 
 	// 14. Average TPS calculation
 	if !chatFailed {
