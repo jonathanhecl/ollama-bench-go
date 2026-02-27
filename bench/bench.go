@@ -158,7 +158,7 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 		errStr := err.Error()
 		// Check if it's a 500/OOM/crash error — retry with reduced context
 		if strings.Contains(errStr, "status 500") || strings.Contains(strings.ToLower(errStr), "stopped") || strings.Contains(strings.ToLower(errStr), "resource") {
-			emit("chat", "running", "Model crashed (OOM). Retrying with reduced context (4K)...", nil)
+			emit("chat", "running", "Model crashed. Retrying with reduced context (4K)...", nil)
 			benchOpts = map[string]interface{}{"num_ctx": ReducedCtxSize}
 
 			ctxRetry, cancelRetry := context.WithTimeout(context.Background(), DefaultTimeout)
@@ -173,6 +173,28 @@ func (r *Runner) RunBenchmarkWithProgress(modelName string, progress ProgressFun
 				Stream:  false,
 				Options: benchOpts,
 			})
+
+			// If still failing (CUDA bug with partial offloading), try CPU-only
+			if err != nil {
+				errStr2 := err.Error()
+				if strings.Contains(errStr2, "status 500") || strings.Contains(strings.ToLower(errStr2), "stopped") || strings.Contains(strings.ToLower(errStr2), "resource") {
+					emit("chat", "running", "CUDA error persists. Retrying in CPU-only mode...", nil)
+					benchOpts = map[string]interface{}{"num_ctx": ReducedCtxSize, "num_gpu": 0}
+
+					ctxCPU, cancelCPU := context.WithTimeout(context.Background(), DefaultTimeout)
+					defer cancelCPU()
+
+					chatResp, err = r.Client.Chat(ctxCPU, ollama.ChatRequest{
+						Model: modelName,
+						Messages: []ollama.ChatMessage{
+							{Role: "system", Content: "You are a fast assistant. Do NOT use <think> or any reasoning tags. Answer immediately."},
+							{Role: "user", Content: "Explain what a CPU is in about 50 words."},
+						},
+						Stream:  false,
+						Options: benchOpts,
+					})
+				}
+			}
 		}
 	}
 	if err != nil {
