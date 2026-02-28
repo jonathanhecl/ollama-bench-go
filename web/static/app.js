@@ -228,6 +228,21 @@
             html += `<div class="result-fail" style="margin-bottom:8px;">⚠ ${esc(r.error)}</div>`;
         }
 
+        // Show debug log if present
+        if (r.debug_log && r.debug_log.length > 0) {
+            html += `<details class="debug-log-section${r.error ? ' has-error' : ''}">
+                <summary class="debug-log-toggle">🔍 Debug Log (${r.debug_log.length} entries)</summary>
+                <div class="debug-log-entries">`;
+            r.debug_log.forEach(entry => {
+                let cls = 'debug-entry';
+                if (entry.includes('FAILED') || entry.includes('FATAL') || entry.includes('error')) cls += ' debug-error';
+                else if (entry.includes('SUCCEEDED')) cls += ' debug-success';
+                else if (entry.includes('Retrying') || entry.includes('Trying')) cls += ' debug-retry';
+                html += `<div class="${cls}">${esc(entry)}</div>`;
+            });
+            html += `</div></details>`;
+        }
+
         html += `<div class="result-list">`;
         html += resultRow('Load Time', r.load_time_sec ? `${r.load_time_sec.toFixed(2)}s` : '—');
         html += resultRow('Tokens/sec', r.tokens_per_sec ? `${r.tokens_per_sec.toFixed(1)}` : '—');

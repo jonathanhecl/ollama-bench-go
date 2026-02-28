@@ -48,7 +48,7 @@ func main() {
 	webPad := 30 + (len(webLink) - len(webURL))
 
 	fmt.Println("╔══════════════════════════════════════════╗")
-	fmt.Println("║         ⚡ Ollama Bench GO v1.3          ║")
+	fmt.Println("║         ⚡ Ollama Bench GO v1.4          ║")
 	fmt.Println("╠══════════════════════════════════════════╣")
 	fmt.Printf("║  Ollama:  %-*s ║\n", ollamaPad, ollamaLink)
 	fmt.Printf("║  Web UI:  %-*s ║\n", webPad, webLink)
